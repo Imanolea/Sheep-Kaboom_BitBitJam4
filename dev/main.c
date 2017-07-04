@@ -21,8 +21,10 @@
 // Flags
 #define CHANGEANIM_F        1U
 #define NOANIM_F            2U
+#define FREEPOS_F           0U
+#define OCCUPIEDPOS_F       1U
 // GUI
-#define GUI_SCORE_X         15U
+#define GUI_SCORE_X         14U
 #define GUI_SCORE_Y         1U
 #define GUI_POWER_X         5U
 #define GUI_POWER_Y         0U
@@ -43,14 +45,16 @@
 #define SHEEP_PREP_ST       2U // sheep is getting prepared to be fired
 #define TARGET_DISABLED_ST  0U
 #define TARGET_BAD_ST       1U
+#define TARGET_GOOD_ST      2U
 // Game
 #define MIN_SHOOT_PW        3U
 #define MAX_SHOOT_PW        18U
 #define SHEEP_CANNON_X      38U
 #define SHEEP_CANNON_Y      121U
-#define SHEEP_COLL_AREA     8U
+#define SHEEP_COLL_AREA     10U
 #define START_TIME          99U
 #define TARGET_NUM          7U
+#define TARGET_POS_NUM      16U
 
 // Data tables
 UBYTE frame_list[] = {
@@ -59,7 +63,8 @@ UBYTE frame_list[] = {
     8, 0x10,  10, 0x10, // 8 - Sheep looking down
     6, 0x70,   4, 0x70, //12 - Sheep looking left
    10, 0x70,   8, 0x70, //16 - Sheep looking up
-   12, 0x00,  14, 0x00  //20 - Cactus
+   12, 0x00,  14, 0x00, //20 - Cactus
+   16, 0x00,  18, 0x00  //24 - Velcro target
 };
 
 UWORD frame_table[] = {
@@ -68,31 +73,43 @@ UWORD frame_table[] = {
     8,  // 2 - Sheep looking down
    12,  // 3 - Sheep looking left
    16,  // 4 - Sheep looking up
-   20   // 5 - Cactus
+   20,  // 5 - Cactus
+   24   // 6 - Velcro target
 };
 
 UBYTE animation_list[] = {
     0, 254, 255,                                // frame_table, animation_t | 0 - Null animation
     1,   8,   2,   8,   3,   8,   4,   8, 255,  // 3 - Rolling sheep
     1, 254, 255,                                //12 - Idle sheep
-    5, 254, 255                                 //15 - Idle cactus
+    5, 254, 255,                                //15 - Idle cactus
+    6, 254, 255                                 //18 - Idle velcro target
 };
 
 UWORD animation_table[] = {
     0,  // 0 - Null animation
     3,  // 1 - Rolling sheep
    12,  // 2 - Idle sheep
-   15   // 3 - Idle cactus
+   15,  // 3 - Idle cactus
+   18   // 4 - Idle velcro target
 };
 
 UBYTE target_positions[] = {
-   130,  0,
-   130, 32,
-   130, 64,
-   130, 96,
-   130,128,
-   130,160,
-   130,192
+     FREEPOS_F,  80, 48,   0,    // occupation_f, posx, posy, (noused)
+     FREEPOS_F,  80, 80,   0,
+     FREEPOS_F,  80,112,   0,
+     FREEPOS_F, 112, 48,   0,
+     FREEPOS_F, 112, 80,   0,
+     FREEPOS_F, 112,112,   0,
+     FREEPOS_F, 144, 48,   0,
+     FREEPOS_F, 144, 80,   0,
+     FREEPOS_F, 144,112,   0,
+     FREEPOS_F,  96, 32,   0,
+     FREEPOS_F,  96, 64,   0,
+     FREEPOS_F,  96, 96,   0,
+     FREEPOS_F, 128, 32,   0,
+     FREEPOS_F, 128, 64,   0,
+     FREEPOS_F, 128, 96,   0,
+     FREEPOS_F, 144, 16,   0
 };
 
 // Structures
@@ -119,14 +136,16 @@ UBYTE bkg_x;
 UBYTE bkg_y;
 Character sheep;
 UBYTE sheep_shoot_power;
+UBYTE sheep_shoot_power_inc;
 Character targets[TARGET_NUM];
-UBYTE score;
+UBYTE target_spawn_t;
+UWORD score;
 UBYTE remaining_time;
 UBYTE remaining_time_t;
 UBYTE sprite_no_i;
 UBYTE logic_counter;
 // Lists
-UBYTE gui_score_tiles[3];
+UBYTE gui_score_tiles[4];
 UBYTE gui_time_tiles[2];
 UBYTE gui_power_tiles[15];
 
@@ -141,6 +160,10 @@ void init_game_bkg();
 void init_game_gui();
 void logic();
 void read_joypad();
+void logic_game();
+void logic_game_spawn_target();
+void try_spawn_target(Character *character);
+void spawn_target(Character *character, UBYTE *target_positions_pointer, UBYTE target_positions_i);
 void logic_sheep();
 void logic_sheep_actions();
 void logic_sheep_actions_shoot();
@@ -150,6 +173,7 @@ void logic_sheep_state_prep();
 void logic_sheep_state_idle();
 void logic_sheep_collision();
 void logic_targets();
+void logic_target(Character *character);
 void sheep_collision(Character *character);
 void upd();
 void upd_time();
@@ -169,6 +193,8 @@ void change_character_animation(Character *character, UBYTE animation_no);
 // Ensamblador
 WORD div8(UBYTE numerator, UBYTE denominator);
 WORD mul8(UBYTE factor_1, UBYTE factor_2);
+WORD div16(UWORD numerator, UBYTE denominator, UWORD result_address);
+WORD mul16(UWORD factor_1, UBYTE factor_2);
 
 void main() {
     init_game_interrupts();
@@ -192,8 +218,8 @@ void init_game_palettes() {
 }
 
 void game() {
-    init_game();
     initrand(LY_REG);
+    init_game();
     // Main loop
     while (1) {
         logic();
@@ -219,7 +245,6 @@ void init_game_var() {
     UBYTE *gui_score_tiles_pointer;
     UBYTE *gui_time_tiles_pointer;
     UBYTE *gui_power_tiles_pointer;
-    UBYTE *target_positions_pointer;
     cur_joypad = 0;
     pre_joypad = 0;
     bkg_x = 0;
@@ -238,29 +263,30 @@ void init_game_var() {
     sheep.state_t0 = 0;
     sheep.state_t1 = 0;
     sheep_shoot_power = MIN_SHOOT_PW;
+    sheep_shoot_power_inc = 1;
     targets_pointer = &targets;
-    target_positions_pointer = &target_positions;
     for (i = 0; i != TARGET_NUM; i++) {
-        targets_pointer->x = *target_positions_pointer++;
-        targets_pointer->y = *target_positions_pointer++;
-        targets_pointer->frame = 5;
+        targets_pointer->x = 0;
+        targets_pointer->y = 0;
+        targets_pointer->frame = 0;
         targets_pointer->palette = STD_PALETTE;
         targets_pointer->orientation = STD_ORIENTATION;
-        targets_pointer->animation_no = 3;
+        targets_pointer->animation_no = 0;
         targets_pointer->animation_f = NOANIM_F;
         targets_pointer->animation_i = 0;
         targets_pointer->animation_t = 1;
-        targets_pointer->state = TARGET_BAD_ST;
+        targets_pointer->state = TARGET_DISABLED_ST;
         targets_pointer->state_t0 = 0;
         targets_pointer->state_t1 = 0;
         targets_pointer++;
     }
+    target_spawn_t = 0;
     score = 0;
     remaining_time = START_TIME;
     sprite_no_i = 0;
     logic_counter = 0;
     gui_score_tiles_pointer = &gui_score_tiles;
-    for (i = 0; i != 3; i++) {
+    for (i = 0; i != 4; i++) {
         *gui_score_tiles_pointer++ = 0;
     }
     gui_time_tiles_pointer = &gui_time_tiles;
@@ -302,6 +328,7 @@ void init_game_gui() {
 
 void logic() {
     read_joypad();
+    logic_game();
     logic_sheep();
     logic_targets();
     logic_counter++;
@@ -310,6 +337,64 @@ void logic() {
 void read_joypad() {
     pre_joypad = cur_joypad;
     cur_joypad = joypad();
+}
+
+void logic_game() {
+    logic_game_spawn_target();
+}
+
+void logic_game_spawn_target() {
+    UBYTE i;
+    Character *targets_pointer;
+    if (target_spawn_t++ != 255) {
+        return;
+    }
+    target_spawn_t = 0;
+    targets_pointer = &targets;
+    for (i = 0; i < TARGET_NUM; i++) {
+        if (targets_pointer->state == TARGET_DISABLED_ST) {
+            try_spawn_target(targets_pointer);
+            return;
+        }
+        targets_pointer++;
+    }
+}
+
+void try_spawn_target(Character *character) {
+    UBYTE *target_positions_pointer;
+    UBYTE target_positions_i;
+    UBYTE i;
+    target_positions_i = rand() & 0x0F;
+    target_positions_pointer = &target_positions;
+    target_positions_pointer += target_positions_i << 2;
+    for (i = 0; i != TARGET_POS_NUM; i++) {
+        target_positions_i++;
+        target_positions_pointer += 4;
+        if (target_positions_i == TARGET_POS_NUM) {
+            target_positions_i = 0;
+            target_positions_pointer = &target_positions;
+        }
+        if (*target_positions_pointer == FREEPOS_F) {
+            spawn_target(character, target_positions_pointer, target_positions_i);
+            return;
+        }
+    }
+}
+
+void spawn_target(Character *character, UBYTE *target_positions_pointer, UBYTE target_positions_i) {
+    *target_positions_pointer++ = OCCUPIEDPOS_F;
+    character->x = *target_positions_pointer++;
+    character->y = *target_positions_pointer;
+    character->state_t0 = target_positions_i;
+    if (rand() & 0x07) {
+        character->frame = 6;
+        character->animation_no = 4;
+        character->state = TARGET_GOOD_ST;
+    } else {
+        character->frame = 5;
+        character->animation_no = 3;
+        character->state = TARGET_BAD_ST;
+    }
 }
 
 void logic_sheep() {
@@ -365,11 +450,14 @@ void logic_sheep_state_fired() {
 }
 
 void logic_sheep_state_prep() {
-    if (logic_counter & 0x03) {
+    if (logic_counter & 0x01) {
         return;
     }
-    sheep_shoot_power++;
-    if (sheep_shoot_power == (MAX_SHOOT_PW)) {
+    if (sheep_shoot_power == MAX_SHOOT_PW) {
+        sheep_shoot_power_inc = -1;
+    }
+    sheep_shoot_power += sheep_shoot_power_inc;
+    if (sheep_shoot_power == 0) {
         logic_sheep_actions_shoot();
     }
 }
@@ -378,6 +466,7 @@ void logic_sheep_state_idle() {
     sheep.x = SHEEP_CANNON_X;
     sheep.y = SHEEP_CANNON_Y;
     sheep_shoot_power = MIN_SHOOT_PW;
+    sheep_shoot_power_inc = 1;
 }
 
 void logic_sheep_collision() {
@@ -398,10 +487,29 @@ void logic_sheep_collision() {
         right_lim > target_x &&
         upper_lim < target_y &&
         bottom_lim > target_y) {
-            sheep_collision(&*targets_pointer);
+            sheep_collision(targets_pointer);
         }
         targets_pointer++;
     }
+}
+
+void sheep_collision(Character *character) {
+    UBYTE *target_positions_pointer; 
+    if (character->state == TARGET_DISABLED_ST) {
+        return;
+    } else if (character->state == TARGET_BAD_ST) {
+        remaining_time -= 10;
+        remaining_time_t = 0;
+    } else if (character->state == TARGET_GOOD_ST) {
+        score++;
+    }
+    sheep.state = SHEEP_IDLE_ST;
+    change_character_animation(&sheep, 2);
+    character->frame = 0;
+    character->state = TARGET_DISABLED_ST;
+    target_positions_pointer = &target_positions;
+    target_positions_pointer += character->state_t0 << 2;
+    *target_positions_pointer = FREEPOS_F; // We set free the collided target
 }
 
 void logic_targets() {
@@ -409,21 +517,14 @@ void logic_targets() {
     Character *targets_pointer;
     targets_pointer = &targets;
     for (i = 0; i < TARGET_NUM; i++) {
-        targets_pointer++->y++;
+        logic_target(targets_pointer++);
     }
 }
 
-void sheep_collision(Character *character) {
+void logic_target(Character *character) {
     if (character->state == TARGET_DISABLED_ST) {
         return;
-    } else if (character->state == TARGET_BAD_ST) {
-        remaining_time -= 10;
-        remaining_time_t = 0;
     }
-    sheep.state = SHEEP_IDLE_ST;
-    change_character_animation(&sheep, 2);
-    character->frame = 0;
-    character->state = TARGET_DISABLED_ST;
 }
 
 void upd() {
@@ -455,7 +556,7 @@ void upd_characters() {
     upd_character(&sheep);
     targets_pointer = &targets;
     for (i = 0; i != TARGET_NUM; i++) {
-        upd_character(&targets_pointer++);
+        upd_character(targets_pointer++);
     }
 }
 
@@ -514,18 +615,15 @@ void upd_gui() {
 }
 
 void upd_gui_score() {
-    UWORD div_out;
     UBYTE div_rem;
-    UBYTE score_aux;
+    UWORD score_aux;
     UBYTE *gui_score_tiles_pointer;
     BYTE i;
     score_aux = score;
     gui_score_tiles_pointer = &gui_score_tiles;
-    gui_score_tiles_pointer += 2;
-    for (i = 2; i != -1; i--) {
-        div_out = div8(score_aux, 10);
-        score_aux = div_out;
-        div_rem = div_out >> 8;
+    gui_score_tiles_pointer += 3;
+    for (i = 3; i != -1; i--) {
+        div_rem = div16(score_aux, 10, &score_aux);
         *gui_score_tiles_pointer-- = DIGIT0_TILE + div_rem;    
     }
 }
@@ -544,7 +642,6 @@ void upd_gui_time() {
         time_aux = div_out;
         div_rem = div_out >> 8;
         *gui_time_tiles_pointer-- = DIGIT0_TILE + div_rem;   
-        
     }
 }
 
@@ -578,7 +675,7 @@ void upd_gui_power() {
 }
 
 void draw_gui() {
-    set_win_tiles(GUI_SCORE_X, GUI_SCORE_Y, 3, 1, gui_score_tiles);
+    set_win_tiles(GUI_SCORE_X, GUI_SCORE_Y, 4, 1, gui_score_tiles);
     set_win_tiles(GUI_TIME_X, GUI_TIME_Y, 2, 1, gui_time_tiles);
     set_win_tiles(GUI_POWER_X, GUI_POWER_Y, 15, 1, gui_power_tiles);
 }
