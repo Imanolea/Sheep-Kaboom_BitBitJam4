@@ -464,6 +464,7 @@ void try_spawn_target(Character *character) {
 
 void spawn_target(Character *character, UBYTE *target_positions_pointer, UBYTE target_positions_i) {
     UBYTE *random_spawn_difficulty_pointer;
+    UBYTE random_spawn_value;
     *target_positions_pointer++ = OCCUPIEDPOS_F;
     character->x = *target_positions_pointer++;
     character->y = *target_positions_pointer;
@@ -472,7 +473,8 @@ void spawn_target(Character *character, UBYTE *target_positions_pointer, UBYTE t
     character->animation_f = 0;
     random_spawn_difficulty_pointer = &random_spawn_difficulty;
     random_spawn_difficulty_pointer += difficulty_level;
-    if ((rand() & *random_spawn_difficulty_pointer) != 0) {
+    random_spawn_value = *random_spawn_difficulty_pointer;
+    if (rand() & random_spawn_value) {
         change_character_animation(character, 7);
         character->state = TARGET_GOOD_SPW_ST;
     } else {
