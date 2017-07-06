@@ -5,10 +5,13 @@
 #include <rand.h>
 // Data files
 // Tiles
+#include "data/tiles/title_tileset.h"
 #include "data/tiles/sprite_tileset.h"
 #include "data/tiles/sprite_bkg_tileset.h"
 #include "data/tiles/bkg_tileset.h"
 // Maps
+#include "data/maps/title_map.h"
+#include "data/maps/story_map.h"
 #include "data/maps/game_map.h"
 #include "data/maps/gui_map.h"
 
@@ -37,7 +40,10 @@
 #define ED_NOPOWER_TILE     255U
 #define MD_POWERFULL_TILE   250U
 #define MD_NOPOWER_TILE     251U
-
+// Game states
+#define TITLE_ST            0U
+#define GAME_ST             1U
+#define STORY_ST            2U
 // States
 #define SHEEP_IDLE_ST       0U
 #define SHEEP_FIRED_ST      1U // state_t0: movx and -movy, state_t1: gravity
@@ -51,6 +57,7 @@
 #define TARGET_GOOD_SPW_ST  4U
 #define TARGET_DESTROY_ST   5U
 // Game
+#define LIGHT_TRANS_DUR     8U
 #define MIN_SHOOT_PW        3U
 #define MAX_SHOOT_PW        18U
 #define SHEEP_CANNON_X      38U
@@ -68,7 +75,7 @@ UBYTE frame_list[] = {
     6, 0x70,   4, 0x70, //12 - Sheep looking left
    10, 0x70,   8, 0x70, //16 - Sheep looking up
    12, 0x00,  14, 0x00, //20 - Cactus
-   16, 0x00,  18, 0x00, //24 - Velcro target
+   16, 0x10,  16, 0x30, //24 - Velcro target
    20, 0x10,  20, 0x30, //28 - Burst 1
    22, 0x10,  22, 0x30, //32 - Burst 2 
    24, 0x10,  24, 0x30, //36 - Burst 3 
@@ -78,7 +85,7 @@ UBYTE frame_list[] = {
    32, 0x10,  32, 0x30, //52 - Burst 7 
    34, 0x10,  34, 0x30, //56 - Spawn 0
    36, 0x10,  38, 0x10, //60 - Spawn cactus 1
-   40, 0x10,  42, 0x10  //64 - Spawn velcro target 1
+   40, 0x10,  40, 0x30  //64 - Spawn velcro target 1
 };
 
 UWORD frame_table[] = {
@@ -197,22 +204,38 @@ UBYTE sheep_shoot_power;
 UBYTE sheep_shoot_power_inc;
 Character targets[TARGET_NUM];
 UBYTE target_spawn_t;
+UBYTE game_state;
 UWORD score;
+UWORD high_score;
 UBYTE remaining_time;
 UBYTE remaining_time_t;
 UBYTE sprite_no_i;
 UBYTE logic_counter;
+UWORD logic_counter_t;
 UBYTE difficulty_level;
 UWORD difficulty_level_t;
 // Lists
+UBYTE title_score_tiles[4];
+UBYTE title_highscore_tiles[4];
 UBYTE gui_score_tiles[4];
 UBYTE gui_time_tiles[2];
 UBYTE gui_power_tiles[15];
 
 // Functions
-void init_game_interrupts();
 void init_game_palettes();
 void game();
+void init();
+void title();
+void logic_title();
+void init_title();
+void init_title_var();
+void init_title_sprite();
+void init_title_bkg();
+void init_title_win();
+void story();
+void init_story();
+void init_story_bkg();
+void logic_story();
 void init_game();
 void init_game_var();
 void init_game_sprite();
@@ -246,12 +269,18 @@ void upd_character(Character *character);
 void upd_character_animation(Character *character);
 void upd_character_sprite(Character *character);
 void upd_gui();
-void upd_gui_score();
+void upd_gui_score(UBYTE *gui_score_tiles, UWORD selected_score);
 void upd_gui_time();
 void upd_gui_power();
+void game_over();
+void draw_title_score();
+void draw();
 void draw_gui();
 void draw_bkg();
 void change_character_animation(Character *character, UBYTE animation_no);
+void lights_out_transition();
+void lights_in_transition();
+void lights_transition_phase(UBYTE transition_phase);
 
 // Ensamblador
 WORD div8(UBYTE numerator, UBYTE denominator);
@@ -260,18 +289,8 @@ WORD div16(UWORD numerator, UBYTE denominator, UWORD result_address);
 WORD mul16(UWORD factor_1, UBYTE factor_2);
 
 void main() {
-    init_game_interrupts();
     init_game_palettes();
     game();
-}
-
-void init_game_interrupts() {
-    disable_interrupts();
-    DISPLAY_OFF;
-    add_VBL(draw_gui);
-    add_VBL(draw_bkg);
-    DISPLAY_ON;
-    enable_interrupts();
 }
 
 void init_game_palettes() {
@@ -281,13 +300,143 @@ void init_game_palettes() {
 }
 
 void game() {
-    initrand(LY_REG);
-    init_game();
-    // Main loop
+    init();
     while (1) {
-        logic();
-        upd();
+        title();
+        story();
+        initrand(LY_REG);
+        init_game();
+        // Main loop
+        while (game_state == GAME_ST) {
+            logic();
+            upd();
+            wait_vbl_done();
+            draw();
+        }
+        game_over();
+    }
+}
+
+void init() {
+    high_score = 0;
+    score = 0;
+    logic_counter_t = 0;
+    logic_counter = 0;
+}
+
+void title() {
+    init_title();
+    while (game_state == TITLE_ST) {
+        logic_title();
+        upd_gui_score(&title_score_tiles, score);
+        upd_gui_score(&title_highscore_tiles, high_score);
         wait_vbl_done();
+        draw_title_score();
+    }
+    lights_out_transition();
+}
+
+void logic_title() {
+    read_joypad();
+    if (cur_joypad & J_A && !(pre_joypad & J_A)) { // A key down
+        game_state = STORY_ST;
+    }
+}
+
+void draw_title_score() {
+    set_bkg_tiles(10, 12, 4, 1, title_highscore_tiles);
+    set_bkg_tiles(10, 14, 4, 1, title_score_tiles);
+}
+
+void init_title() {
+    disable_interrupts();
+    DISPLAY_OFF;
+    init_title_var();
+    init_title_sprite();
+    init_title_bkg();
+    init_title_win();
+    DISPLAY_ON;
+    enable_interrupts();
+    upd_gui_score(&title_score_tiles, score);
+    upd_gui_score(&title_highscore_tiles, high_score);
+    wait_vbl_done();
+    draw_title_score();
+    lights_in_transition();
+}
+
+void init_title_var() {
+    UBYTE *title_score_tiles_pointer;
+    UBYTE *title_highscore_tiles_pointer;
+    UBYTE i;
+    game_state = TITLE_ST;
+    title_score_tiles_pointer = &title_highscore_tiles;
+    for (i = 0; i != 4; i++) {
+        *title_score_tiles_pointer++ = 0;
+    }
+    title_highscore_tiles_pointer = &title_highscore_tiles;
+    for (i = 0; i != 4; i++) {
+        *title_highscore_tiles_pointer++ = 0;
+    }
+}
+
+void init_title_sprite() {
+    HIDE_SPRITES;
+}
+
+void init_title_bkg() {
+    SWITCH_ROM_MBC1(title_tilesetBank);
+    set_bkg_data(0, 256, title_tileset);
+    SWITCH_ROM_MBC1(title_mapBank);
+    set_bkg_tiles(0, 0, title_mapWidth, title_mapHeight, title_map);
+    move_bkg(0, 0);
+    SHOW_BKG;
+}
+
+void init_title_win() {
+    move_win(7, 144);
+}
+
+void story() {
+    init_story();
+    while (game_state == STORY_ST) {
+        logic_story();
+        wait_vbl_done();
+        move_bkg(bkg_x, bkg_y);
+    }
+    lights_out_transition();
+}
+
+void init_story() {
+    disable_interrupts();
+    DISPLAY_OFF;
+    init_story_bkg();
+    DISPLAY_ON;
+    enable_interrupts();
+    lights_in_transition();
+}
+
+void init_story_bkg() {
+    SWITCH_ROM_MBC1(title_tilesetBank);
+    set_bkg_data(0, 256, title_tileset);
+    SWITCH_ROM_MBC1(story_mapBank);
+    set_bkg_tiles(0, 0, story_mapWidth, story_mapHeight, story_map);
+    move_bkg(0, 0);
+    SHOW_BKG;
+}
+
+void logic_story() {
+    read_joypad();
+    if (cur_joypad & J_A && !(pre_joypad & J_A)) { // A key down
+        game_state = GAME_ST;
+    }
+    if (!(logic_counter++ & 0x03)) {
+        bkg_y++;
+        if (bkg_y > 112) {
+            bkg_y = 112;
+        }
+    }
+    if (logic_counter_t++ == 540) {
+        game_state = GAME_ST;
     }
 }
 
@@ -300,6 +449,10 @@ void init_game() {
     init_game_gui();
     DISPLAY_ON;
     enable_interrupts();
+    upd();
+    wait_vbl_done();
+    draw();
+    lights_in_transition();
 }
 
 void init_game_var() {
@@ -315,7 +468,7 @@ void init_game_var() {
     // Sheep
     sheep.x = SHEEP_CANNON_X;
     sheep.y = SHEEP_CANNON_Y;
-    sheep.frame = 0;
+    sheep.frame = 1;
     sheep.palette = STD_PALETTE;
     sheep.orientation = STD_ORIENTATION;
     sheep.animation_no = 2;
@@ -327,7 +480,7 @@ void init_game_var() {
     sheep.state_t1 = 0;
     burst.x = SHEEP_CANNON_X;
     burst.y = SHEEP_CANNON_Y;
-    burst.frame = 7;
+    burst.frame = 0;
     burst.palette = STD_PALETTE;
     burst.orientation = STD_ORIENTATION;
     burst.animation_no = 5;
@@ -357,9 +510,11 @@ void init_game_var() {
     }
     target_spawn_t = 0;
     score = 0;
+    game_state = GAME_ST;
     remaining_time = START_TIME;
     sprite_no_i = 0;
     logic_counter = 0;
+    logic_counter_t = 0;
     difficulty_level = 0;
     difficulty_level_t = 0;
     gui_score_tiles_pointer = &gui_score_tiles;
@@ -633,6 +788,9 @@ void sheep_collision(Character *character) {
     } else if (character->state == TARGET_BAD_ST) {
         remaining_time -= 10;
         remaining_time_t = 0;
+        if (remaining_time > START_TIME) {
+            remaining_time = 0;
+        }
         sheep.state = SHEEP_DAMAGED_ST;
         change_character_animation(character, 0);
     } else if (character->state == TARGET_GOOD_ST) {
@@ -721,6 +879,9 @@ void upd() {
 }
 
 void upd_time() {
+    if (remaining_time == 0) {
+        game_state = TITLE_ST;
+    }
     if (remaining_time_t++ != 60) {
         return;
     }
@@ -800,22 +961,20 @@ void upd_character_sprite(Character *character) {
 }
 
 void upd_gui() {
-    upd_gui_score();
+    upd_gui_score(&gui_score_tiles, score);
     upd_gui_time();
     upd_gui_power();
 }
 
-void upd_gui_score() {
+void upd_gui_score(UBYTE *gui_score_tiles, UWORD selected_score) {
     UBYTE div_rem;
     UWORD score_aux;
-    UBYTE *gui_score_tiles_pointer;
     BYTE i;
-    score_aux = score;
-    gui_score_tiles_pointer = &gui_score_tiles;
-    gui_score_tiles_pointer += 3;
+    score_aux = selected_score;
+    gui_score_tiles += 3;
     for (i = 3; i != -1; i--) {
         div_rem = div16(score_aux, 10, &score_aux);
-        *gui_score_tiles_pointer-- = DIGIT0_TILE + div_rem;    
+        *gui_score_tiles-- = DIGIT0_TILE + div_rem;    
     }
 }
 
@@ -865,6 +1024,18 @@ void upd_gui_power() {
     }
 }
 
+void game_over() {
+    lights_out_transition();
+    if (score > high_score) {
+        high_score = score;
+    }
+}
+
+void draw() {
+    draw_gui();
+    draw_bkg();
+}
+
 void draw_gui() {
     set_win_tiles(GUI_SCORE_X, GUI_SCORE_Y, 4, 1, gui_score_tiles);
     set_win_tiles(GUI_TIME_X, GUI_TIME_Y, 2, 1, gui_time_tiles);
@@ -879,4 +1050,54 @@ void change_character_animation(Character *character, UBYTE animation_no) {
     character->animation_no = animation_no;
     character->animation_i = 0;
     character->animation_t = 1;
+}
+
+void lights_out_transition() {
+    UBYTE transition_phase;
+    UBYTE transition_phase_t;
+    transition_phase = 0;
+    transition_phase_t = 0;
+    while (transition_phase != 4) {
+        lights_transition_phase(transition_phase);
+        if (transition_phase_t++ == LIGHT_TRANS_DUR) {
+            transition_phase_t = 0;
+            transition_phase++;
+        }
+        wait_vbl_done();
+    }
+}
+
+void lights_in_transition() {
+    UBYTE transition_phase;
+    UBYTE transition_phase_t;
+    transition_phase = 3;
+    transition_phase_t = 0;
+    while (transition_phase != 255) {
+        lights_transition_phase(transition_phase);
+        if (transition_phase_t++ == LIGHT_TRANS_DUR) {
+            transition_phase_t = 0;
+            transition_phase--;
+        }
+        wait_vbl_done();
+    }
+}
+
+void lights_transition_phase(UBYTE transition_phase) {
+    if (transition_phase == 0) {
+        BGP_REG = 0xE4;
+        OBP0_REG = 0xE4;
+        OBP1_REG = 0x1E;
+    } else if (transition_phase == 1) {
+        BGP_REG = 0x90;
+        OBP0_REG = 0x90;
+        OBP1_REG = 0x09;
+    } else if (transition_phase == 2) {
+        BGP_REG = 0x40;
+        OBP0_REG = 0x40;
+        OBP1_REG = 0x04;
+    } else {
+        BGP_REG = 0x00;
+        OBP0_REG = 0x00;
+        OBP1_REG = 0x00;        
+    }
 }
