@@ -228,6 +228,7 @@ void game();
 void init();
 void title();
 void logic_title();
+void logic_title_sheep();
 void init_title();
 void init_title_var();
 void init_title_sprite();
@@ -239,6 +240,7 @@ void init_story_bkg();
 void logic_story();
 void init_game();
 void init_game_var();
+void init_game_var_sprite();
 void init_game_sprite();
 void init_game_bkg();
 void init_game_gui();
@@ -252,7 +254,7 @@ void logic_game_difficulty();
 void logic_sheep();
 void logic_effects();
 void logic_sheep_actions();
-void logic_sheep_actions_shoot();
+void logic_sheep_actions_shoot(UBYTE shoot_x, UBYTE shoot_y);
 void logic_sheep_state();
 void logic_sheep_state_fired();
 void logic_sheep_state_prep();
@@ -329,6 +331,7 @@ void title() {
     init_title();
     while (game_state == TITLE_ST) {
         logic_title();
+        logic_title_sheep();
         upd_gui_score(&title_score_tiles, score);
         upd_gui_score(&title_highscore_tiles, high_score);
         wait_vbl_done();
@@ -342,6 +345,26 @@ void logic_title() {
     if (cur_joypad & J_A && !(pre_joypad & J_A)) { // A key down
         game_state = STORY_ST;
     }
+    if (!(logic_counter & 0x7F)) {
+        sheep_shoot_power = rand() & 0x0F;
+        logic_sheep_actions_shoot(74, 64);
+    }
+    logic_counter++;
+}
+
+void logic_title_sheep() {
+    burst.frame = 0;
+    burst.animation_f = NOANIM_F;
+    if (sheep.state == SHEEP_FIRED_ST) {
+        logic_sheep_state_fired();
+    }
+    if (sheep.x > SCREENWIDTH + 16 || sheep.y > SCREENHEIGHT + 16) {
+        sheep.frame = 0;
+        sheep.animation_f = NOANIM_F;
+        sheep.state = SHEEP_IDLE_ST;
+    }
+    upd_sheep();
+    upd_characters();
 }
 
 void draw_title_score() {
@@ -369,6 +392,11 @@ void init_title_var() {
     UBYTE *title_score_tiles_pointer;
     UBYTE *title_highscore_tiles_pointer;
     UBYTE i;
+    init_game_var_sprite();
+    sheep.frame = 0;
+    sheep.animation_f = NOANIM_F;
+    logic_counter_t = 0;
+    logic_counter = 0;
     game_state = TITLE_ST;
     title_score_tiles_pointer = &title_highscore_tiles;
     for (i = 0; i != 4; i++) {
@@ -381,7 +409,11 @@ void init_title_var() {
 }
 
 void init_title_sprite() {
-    HIDE_SPRITES;
+    SWITCH_ROM_MBC1(sprite_tilesetBank);
+    set_sprite_data(0, 128, sprite_tileset);
+    SPRITES_8x16;
+    upd_characters();
+    SHOW_SPRITES;
 }
 
 void init_title_bkg() {
@@ -415,6 +447,8 @@ void story() {
 void init_story() {
     disable_interrupts();
     DISPLAY_OFF;
+    logic_counter_t = 0;
+    logic_counter = 0;
     init_story_bkg();
     DISPLAY_ON;
     enable_interrupts();
@@ -463,15 +497,43 @@ void init_game() {
 
 void init_game_var() {
     UBYTE i;
-    Character *targets_pointer;
     UBYTE *gui_score_tiles_pointer;
     UBYTE *gui_time_tiles_pointer;
     UBYTE *gui_power_tiles_pointer;
+    init_game_var_sprite();
     cur_joypad = 0;
     pre_joypad = 0;
     bkg_x = 0;
     bkg_y = 0;
-    // Sheep
+    sheep_shoot_power = MIN_SHOOT_PW;
+    sheep_shoot_power_inc = 1;
+    target_spawn_t = 0;
+    score = 0;
+    game_state = GAME_ST;
+    remaining_time = START_TIME;
+    sprite_no_i = 0;
+    logic_counter = 0;
+    logic_counter_t = 0;
+    difficulty_level = 0;
+    difficulty_level_t = 0;
+    gui_score_tiles_pointer = &gui_score_tiles;
+    for (i = 0; i != 4; i++) {
+        *gui_score_tiles_pointer++ = 0;
+    }
+    gui_time_tiles_pointer = &gui_time_tiles;
+    *gui_time_tiles_pointer++ = DIGIT0_TILE + 9;
+    *gui_time_tiles_pointer = DIGIT0_TILE + 9;
+    gui_power_tiles_pointer = &gui_power_tiles;
+    *gui_power_tiles_pointer++ = ST_NOPOWER_TILE;
+    for (i = 1; i != 14; i++) {
+        *gui_power_tiles_pointer++ = MD_NOPOWER_TILE;
+    }
+    *gui_power_tiles_pointer = ED_NOPOWER_TILE;
+}
+
+void init_game_var_sprite() {
+    UBYTE i;
+    Character *targets_pointer;
     sheep.x = SHEEP_CANNON_X;
     sheep.y = SHEEP_CANNON_Y;
     sheep.frame = 1;
@@ -514,28 +576,6 @@ void init_game_var() {
         targets_pointer->state_t1 = 0;
         targets_pointer++;
     }
-    target_spawn_t = 0;
-    score = 0;
-    game_state = GAME_ST;
-    remaining_time = START_TIME;
-    sprite_no_i = 0;
-    logic_counter = 0;
-    logic_counter_t = 0;
-    difficulty_level = 0;
-    difficulty_level_t = 0;
-    gui_score_tiles_pointer = &gui_score_tiles;
-    for (i = 0; i != 4; i++) {
-        *gui_score_tiles_pointer++ = 0;
-    }
-    gui_time_tiles_pointer = &gui_time_tiles;
-    *gui_time_tiles_pointer++ = DIGIT0_TILE + 9;
-    *gui_time_tiles_pointer = DIGIT0_TILE + 9;
-    gui_power_tiles_pointer = &gui_power_tiles;
-    *gui_power_tiles_pointer++ = ST_NOPOWER_TILE;
-    for (i = 1; i != 14; i++) {
-        *gui_power_tiles_pointer++ = MD_NOPOWER_TILE;
-    }
-    *gui_power_tiles_pointer = ED_NOPOWER_TILE;
 }
 
 void init_game_sprite() {
@@ -682,14 +722,14 @@ void logic_sheep_actions() {
     }
     if (!(cur_joypad & J_A) && pre_joypad & J_A) { // A key up
         if (sheep.state == SHEEP_PREP_ST) {
-            logic_sheep_actions_shoot(); // If the sheep is ready to get fired it gets fired
+            logic_sheep_actions_shoot(SHEEP_CANNON_X, SHEEP_CANNON_Y); // If the sheep is ready to get fired it gets fired
         }
     }
 }
 
-void logic_sheep_actions_shoot() {
-    sheep.x = SHEEP_CANNON_X;
-    sheep.y = SHEEP_CANNON_Y;
+void logic_sheep_actions_shoot(UBYTE shoot_x, UBYTE shoot_y) {
+    sheep.x = shoot_x;
+    sheep.y = shoot_y;
     sheep.state = SHEEP_FIRED_ST;
     sheep.state_t0 = sheep_shoot_power; // initial movx and -movy
     sheep.state_t1 = 0; // gravity acceleration
@@ -747,7 +787,7 @@ void logic_sheep_state_prep() {
     }
     sheep_shoot_power += sheep_shoot_power_inc;
     if (sheep_shoot_power == 0) {
-        logic_sheep_actions_shoot();
+        logic_sheep_actions_shoot(SHEEP_CANNON_X, SHEEP_CANNON_Y);
     }
 }
 
