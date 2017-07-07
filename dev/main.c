@@ -5,7 +5,7 @@
 #include <rand.h>
 // Data files
 // Tiles
-#include "data/tiles/title_tileset.h"
+#include "data/tiles/story_tileset.h"
 #include "data/tiles/sprite_tileset.h"
 #include "data/tiles/sprite_bkg_tileset.h"
 #include "data/tiles/bkg_tileset.h"
@@ -74,7 +74,7 @@ UBYTE frame_list[] = {
     8, 0x10,  10, 0x10, // 8 - Sheep looking down
     6, 0x70,   4, 0x70, //12 - Sheep looking left
    10, 0x70,   8, 0x70, //16 - Sheep looking up
-   12, 0x00,  14, 0x00, //20 - Cactus
+   12, 0x10,  12, 0x30, //20 - Cactus
    16, 0x10,  16, 0x30, //24 - Velcro target
    20, 0x10,  20, 0x30, //28 - Burst 1
    22, 0x10,  22, 0x30, //32 - Burst 2 
@@ -84,7 +84,7 @@ UBYTE frame_list[] = {
    30, 0x10,  30, 0x30, //48 - Burst 6 
    32, 0x10,  32, 0x30, //52 - Burst 7 
    34, 0x10,  34, 0x30, //56 - Spawn 0
-   36, 0x10,  38, 0x10, //60 - Spawn cactus 1
+   36, 0x10,  36, 0x30, //60 - Spawn cactus 1
    40, 0x10,  40, 0x30  //64 - Spawn velcro target 1
 };
 
@@ -384,8 +384,8 @@ void init_title_sprite() {
 }
 
 void init_title_bkg() {
-    SWITCH_ROM_MBC1(title_tilesetBank);
-    set_bkg_data(0, 256, title_tileset);
+    SWITCH_ROM_MBC1(story_tilesetBank);
+    set_bkg_data(0, 256, story_tileset);
     SWITCH_ROM_MBC1(title_mapBank);
     set_bkg_tiles(0, 0, title_mapWidth, title_mapHeight, title_map);
     move_bkg(0, 0);
@@ -416,8 +416,8 @@ void init_story() {
 }
 
 void init_story_bkg() {
-    SWITCH_ROM_MBC1(title_tilesetBank);
-    set_bkg_data(0, 256, title_tileset);
+    SWITCH_ROM_MBC1(story_tilesetBank);
+    set_bkg_data(0, 256, story_tileset);
     SWITCH_ROM_MBC1(story_mapBank);
     set_bkg_tiles(0, 0, story_mapWidth, story_mapHeight, story_map);
     move_bkg(0, 0);

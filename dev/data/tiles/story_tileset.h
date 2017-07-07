@@ -1,6 +1,6 @@
 /*
 
- TITLE_TILESET.H
+ STORY_TILESET.H
 
  Include File.
 
@@ -24,8 +24,8 @@
 
 
 /* Bank of tiles. */
-#define title_tilesetBank 1
+#define story_tilesetBank 1
 /* Start of tile array. */
-extern unsigned char title_tileset[];
+extern unsigned char story_tileset[];
 
-/* End of TITLE_TILESET.H */
+/* End of STORY_TILESET.H */
