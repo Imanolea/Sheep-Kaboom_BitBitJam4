@@ -157,24 +157,24 @@ UBYTE target_positions[] = {
 };
 
 UBYTE random_spawn_difficulty[] = {
-    0x0F,
     0x07,
     0x03,
-    0x01
+    0x01,
+    0x00
 };
 
 UBYTE spawn_duration_difficulty[] = {
-    255,
     192,
     128,
-    64
+    64,
+    32
 };
 
 UBYTE target_duration_difficulty[] = {
-    255,
     224,
     192,
-    160
+    160,
+    128
 };
 
 // Structures
@@ -450,6 +450,7 @@ void init_story() {
     logic_counter_t = 0;
     logic_counter = 0;
     init_story_bkg();
+    HIDE_SPRITES;
     DISPLAY_ON;
     enable_interrupts();
     lights_in_transition();
@@ -500,6 +501,7 @@ void init_game_var() {
     UBYTE *gui_score_tiles_pointer;
     UBYTE *gui_time_tiles_pointer;
     UBYTE *gui_power_tiles_pointer;
+    UBYTE *target_positions_pointer;
     init_game_var_sprite();
     cur_joypad = 0;
     pre_joypad = 0;
@@ -529,6 +531,11 @@ void init_game_var() {
         *gui_power_tiles_pointer++ = MD_NOPOWER_TILE;
     }
     *gui_power_tiles_pointer = ED_NOPOWER_TILE;
+    target_positions_pointer = &target_positions;
+    for (i = 0; i != 16; i++) {
+        *target_positions_pointer = FREEPOS_F;
+        target_positions_pointer += 4;
+    }
 }
 
 void init_game_var_sprite() {
@@ -675,6 +682,16 @@ void spawn_target(Character *character, UBYTE *target_positions_pointer, UBYTE t
     random_spawn_difficulty_pointer = &random_spawn_difficulty;
     random_spawn_difficulty_pointer += difficulty_level;
     random_spawn_value = *random_spawn_difficulty_pointer;
+    if (random_spawn_value == 0) {
+        if ((rand() & 0x07) < 5) {
+            change_character_animation(character, 6);
+            character->state = TARGET_BAD_SPW_ST;
+        } else {
+            change_character_animation(character, 7);
+            character->state = TARGET_GOOD_SPW_ST;
+        }
+        return;
+    }
     if (rand() & random_spawn_value) {
         change_character_animation(character, 7);
         character->state = TARGET_GOOD_SPW_ST;
@@ -716,7 +733,7 @@ void logic_effects() {
 
 void logic_sheep_actions() {
     if (cur_joypad & J_A && !(pre_joypad & J_A)) { // A key down
-        if (sheep.state != SHEEP_FIRED_ST) {
+        if (sheep.state == SHEEP_IDLE_ST) {
             sheep.state = SHEEP_PREP_ST; // If the sheep is not being fired it gets ready to be fired
         }
     }
