@@ -5,6 +5,7 @@
 #include <rand.h>
 // Data files
 // Tiles
+#include "data/tiles/title_tileset.h"
 #include "data/tiles/story_tileset.h"
 #include "data/tiles/sprite_tileset.h"
 #include "data/tiles/sprite_bkg_tileset.h"
@@ -344,8 +345,8 @@ void logic_title() {
 }
 
 void draw_title_score() {
-    set_bkg_tiles(10, 12, 4, 1, title_highscore_tiles);
-    set_bkg_tiles(10, 14, 4, 1, title_score_tiles);
+    set_bkg_tiles(10, 13, 4, 1, title_highscore_tiles);
+    set_bkg_tiles(10, 15, 4, 1, title_score_tiles);
 }
 
 void init_title() {
@@ -384,8 +385,13 @@ void init_title_sprite() {
 }
 
 void init_title_bkg() {
+    UBYTE *story_tileset_pointer;
+    SWITCH_ROM_MBC1(title_tilesetBank);
+    set_bkg_data(0, 192, title_tileset);
     SWITCH_ROM_MBC1(story_tilesetBank);
-    set_bkg_data(0, 256, story_tileset);
+    story_tileset_pointer = &story_tileset;
+    story_tileset_pointer += 3072;
+    set_bkg_data(192, 64, story_tileset_pointer);
     SWITCH_ROM_MBC1(title_mapBank);
     set_bkg_tiles(0, 0, title_mapWidth, title_mapHeight, title_map);
     move_bkg(0, 0);
